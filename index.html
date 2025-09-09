@@ -1,1 +1,83 @@
-<!DOCTYPE html><html><head><title>Catch the Stars v1.1</title></head><body><h1>Catch the Stars v1.1</h1></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<meta name="theme-color" content="#2e3350" />
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<title>Catch the Stars — v1.1.1</title>
+<style>
+  :root{ --accent:#ffd166; --ink:#fff; }
+  html,body{margin:0;height:100%;overflow:hidden;background:#0f1226;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif}
+  canvas{display:block;touch-action:none}
+  .hud{position:fixed;left:0;right:0;top:0;display:flex;gap:.6rem;align-items:center;padding:.6rem .8rem;background:linear-gradient(to bottom,rgba(0,0,0,.35),rgba(0,0,0,0));z-index:3}
+  .chip{background:rgba(255,255,255,.12);padding:.35rem .6rem;border-radius:.7rem;font-weight:700;font-size:14px}
+  .title{font-weight:800;font-size:16px;margin-right:auto}
+  .btn{cursor:pointer;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:.45rem .7rem;border-radius:.6rem;font-weight:700}
+  .prompt{position:fixed;left:50%;transform:translateX(-50%);top:48px;padding:.5rem 1rem;border-radius:.8rem;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);font-weight:800;z-index:3}
+  .overlay{position:fixed;inset:0;display:none;place-items:center;background:rgba(3,6,23,.55);backdrop-filter:blur(8px);z-index:4}
+  .overlay.show{display:grid}
+  .panel{width:min(680px,92vw);max-height:86vh;overflow:auto;background:rgba(20,22,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  .row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.4rem 0}
+  .toggle{display:flex;align-items:center;gap:.5rem;padding:.5rem .7rem;background:rgba(255,255,255,.08);border-radius:10px;cursor:pointer}
+  .panel .btn{background:var(--accent);color:#1a1725;border:none;font-weight:900;padding:.7rem 1rem;border-radius:10px;margin-top:8px}
+</style>
+</head>
+<body>
+  <div class="hud">
+    <div class="title">🌟 Catch the Stars</div>
+    <div class="chip" id="scoreChip">Score: 0</div>
+    <div class="chip" id="streakChip">Streak: 0</div>
+    <div class="chip" id="levelChip">Level: 1</div>
+    <div class="chip" id="livesChip">❤️❤️❤️</div>
+    <div class="btn" id="btnPause">⏸</div>
+    <div class="btn" id="btnSettings">⚙️</div>
+  </div>
+  <div class="prompt" id="prompt">Tap the right star!</div>
+  <canvas id="game"></canvas>
+
+  <div class="overlay" id="pauseOverlay" role="dialog" aria-modal="true">
+    <div class="panel">
+      <h2 id="pauseTitle">Paused</h2>
+      <div class="row">
+        <button class="btn" id="btnResume">Resume ▶</button>
+        <button class="btn" id="btnRestart">Restart ↺</button>
+      </div>
+      <div class="row">
+        <div class="toggle"><input type="checkbox" id="soundOn" checked>SFX</div>
+        <div class="toggle"><input type="checkbox" id="musicOn">Music</div>
+      </div>
+      <p>Goal: pop the star(s) that match the prompt. Earn up to ★★★ per level.</p>
+    </div>
+  </div>
+
+  <div class="overlay" id="settingsOverlay" role="dialog" aria-modal="true">
+    <div class="panel">
+      <h2>Settings</h2>
+      <div class="row">
+        <label class="toggle"><input type="checkbox" id="modeNumbers" checked> Numbers</label>
+        <label class="toggle"><input type="checkbox" id="modeLetters" checked> Letters</label>
+        <label class="toggle"><input type="checkbox" id="modeColors" checked> Colors</label>
+        <label class="toggle"><input type="checkbox" id="modeAddSub" checked> +/−</label>
+        <label class="toggle"><input type="checkbox" id="modeShapes"> Shapes</label>
+      </div>
+      <div class="row">
+        <label class="toggle">Targets per level:
+          <select id="targetsPerRound"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+        </label>
+        <label class="toggle">Level time (sec):
+          <select id="roundSeconds"><option>20</option><option selected>30</option><option>45</option></select>
+        </label>
+        <label class="toggle">Difficulty:
+          <select id="difficulty"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+        </label>
+      </div>
+      <button class="btn" id="btnApply">Apply & Close</button>
+    </div>
+  </div>
+
+<script src="js/engine.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
