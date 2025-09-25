@@ -1,0 +1,31 @@
+name: Claude Quick Fix
+
+on:
+  push:
+    branches: ['main', 'master', 'develop']
+  pull_request:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  quick-fix:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          task: |
+            Fix all CI/CD issues in this repository.
+            Auto-detect the language and framework.
+            Fix all errors and ensure builds pass.
