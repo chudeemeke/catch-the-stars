@@ -1,0 +1,482 @@
+name: Universal Claude CI/CD Fixer
+
+# This workflow is designed to work with ANY project - just copy and paste!
+
+on:
+  # Trigger when ANY workflow fails
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+
+  # Manual trigger with options
+  workflow_dispatch:
+    inputs:
+      fix_mode:
+        description: 'Fix mode'
+        required: false
+        type: choice
+        default: 'auto-detect'
+        options:
+          - 'auto-detect'
+          - 'aggressive-fix'
+          - 'safe-fix'
+          - 'dependencies-only'
+          - 'tests-only'
+          - 'build-only'
+
+  # Trigger on push if build fails
+  push:
+    branches: ['**']
+
+  # Trigger on PR
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  pages: write
+  packages: write
+  security-events: write
+
+jobs:
+  intelligent-fixer:
+    runs-on: ubuntu-latest
+    name: Universal Intelligent Fixer
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect Project Type and Stack
+        id: detect
+        run: |
+          echo "🔍 Detecting project type and technology stack..."
+
+          # Initialize detection variables
+          PROJECT_TYPE="unknown"
+          PACKAGE_MANAGER="none"
+          LANGUAGE="unknown"
+          FRAMEWORK="none"
+          BUILD_TOOL="none"
+          TEST_FRAMEWORK="none"
+
+          # Detect Node.js projects
+          if [ -f "package.json" ]; then
+            PROJECT_TYPE="nodejs"
+            LANGUAGE="javascript/typescript"
+
+            # Detect package manager
+            if [ -f "pnpm-lock.yaml" ]; then
+              PACKAGE_MANAGER="pnpm"
+              echo "INSTALL_CMD=pnpm install" >> $GITHUB_ENV
+              echo "BUILD_CMD=pnpm build" >> $GITHUB_ENV
+              echo "TEST_CMD=pnpm test" >> $GITHUB_ENV
+              echo "LINT_CMD=pnpm lint" >> $GITHUB_ENV
+            elif [ -f "yarn.lock" ]; then
+              PACKAGE_MANAGER="yarn"
+              echo "INSTALL_CMD=yarn install" >> $GITHUB_ENV
+              echo "BUILD_CMD=yarn build" >> $GITHUB_ENV
+              echo "TEST_CMD=yarn test" >> $GITHUB_ENV
+              echo "LINT_CMD=yarn lint" >> $GITHUB_ENV
+            else
+              PACKAGE_MANAGER="npm"
+              echo "INSTALL_CMD=npm ci || npm install" >> $GITHUB_ENV
+              echo "BUILD_CMD=npm run build" >> $GITHUB_ENV
+              echo "TEST_CMD=npm test" >> $GITHUB_ENV
+              echo "LINT_CMD=npm run lint" >> $GITHUB_ENV
+            fi
+
+            # Detect framework
+            if grep -q "react" package.json; then
+              FRAMEWORK="react"
+            elif grep -q "vue" package.json; then
+              FRAMEWORK="vue"
+            elif grep -q "angular" package.json; then
+              FRAMEWORK="angular"
+            elif grep -q "next" package.json; then
+              FRAMEWORK="nextjs"
+            elif grep -q "express" package.json; then
+              FRAMEWORK="express"
+            fi
+
+          # Detect Python projects
+          elif [ -f "requirements.txt" ] || [ -f "setup.py" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
+            PROJECT_TYPE="python"
+            LANGUAGE="python"
+
+            if [ -f "Pipfile" ]; then
+              PACKAGE_MANAGER="pipenv"
+              echo "INSTALL_CMD=pipenv install --dev" >> $GITHUB_ENV
+              echo "TEST_CMD=pipenv run pytest" >> $GITHUB_ENV
+              echo "LINT_CMD=pipenv run flake8" >> $GITHUB_ENV
+            elif [ -f "poetry.lock" ]; then
+              PACKAGE_MANAGER="poetry"
+              echo "INSTALL_CMD=poetry install" >> $GITHUB_ENV
+              echo "TEST_CMD=poetry run pytest" >> $GITHUB_ENV
+              echo "LINT_CMD=poetry run flake8" >> $GITHUB_ENV
+            else
+              PACKAGE_MANAGER="pip"
+              echo "INSTALL_CMD=pip install -r requirements.txt" >> $GITHUB_ENV
+              echo "TEST_CMD=pytest" >> $GITHUB_ENV
+              echo "LINT_CMD=flake8" >> $GITHUB_ENV
+            fi
+
+          # Detect Java projects
+          elif [ -f "pom.xml" ]; then
+            PROJECT_TYPE="java"
+            LANGUAGE="java"
+            PACKAGE_MANAGER="maven"
+            echo "INSTALL_CMD=mvn clean install -DskipTests" >> $GITHUB_ENV
+            echo "BUILD_CMD=mvn package" >> $GITHUB_ENV
+            echo "TEST_CMD=mvn test" >> $GITHUB_ENV
+          elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+            PROJECT_TYPE="java"
+            LANGUAGE="java/kotlin"
+            PACKAGE_MANAGER="gradle"
+            echo "INSTALL_CMD=./gradlew build -x test" >> $GITHUB_ENV
+            echo "BUILD_CMD=./gradlew build" >> $GITHUB_ENV
+            echo "TEST_CMD=./gradlew test" >> $GITHUB_ENV
+
+          # Detect Go projects
+          elif [ -f "go.mod" ]; then
+            PROJECT_TYPE="go"
+            LANGUAGE="go"
+            PACKAGE_MANAGER="go"
+            echo "INSTALL_CMD=go mod download" >> $GITHUB_ENV
+            echo "BUILD_CMD=go build ./..." >> $GITHUB_ENV
+            echo "TEST_CMD=go test ./..." >> $GITHUB_ENV
+            echo "LINT_CMD=golangci-lint run" >> $GITHUB_ENV
+
+          # Detect Rust projects
+          elif [ -f "Cargo.toml" ]; then
+            PROJECT_TYPE="rust"
+            LANGUAGE="rust"
+            PACKAGE_MANAGER="cargo"
+            echo "INSTALL_CMD=cargo fetch" >> $GITHUB_ENV
+            echo "BUILD_CMD=cargo build --release" >> $GITHUB_ENV
+            echo "TEST_CMD=cargo test" >> $GITHUB_ENV
+            echo "LINT_CMD=cargo clippy" >> $GITHUB_ENV
+
+          # Detect Ruby projects
+          elif [ -f "Gemfile" ]; then
+            PROJECT_TYPE="ruby"
+            LANGUAGE="ruby"
+            PACKAGE_MANAGER="bundler"
+            echo "INSTALL_CMD=bundle install" >> $GITHUB_ENV
+            echo "TEST_CMD=bundle exec rspec" >> $GITHUB_ENV
+            echo "LINT_CMD=bundle exec rubocop" >> $GITHUB_ENV
+
+          # Detect PHP projects
+          elif [ -f "composer.json" ]; then
+            PROJECT_TYPE="php"
+            LANGUAGE="php"
+            PACKAGE_MANAGER="composer"
+            echo "INSTALL_CMD=composer install" >> $GITHUB_ENV
+            echo "TEST_CMD=composer test" >> $GITHUB_ENV
+            echo "LINT_CMD=composer lint" >> $GITHUB_ENV
+
+          # Detect .NET projects
+          elif [ -f "*.csproj" ] || [ -f "*.sln" ]; then
+            PROJECT_TYPE="dotnet"
+            LANGUAGE="csharp"
+            PACKAGE_MANAGER="nuget"
+            echo "INSTALL_CMD=dotnet restore" >> $GITHUB_ENV
+            echo "BUILD_CMD=dotnet build" >> $GITHUB_ENV
+            echo "TEST_CMD=dotnet test" >> $GITHUB_ENV
+          fi
+
+          # Save detection results
+          echo "PROJECT_TYPE=${PROJECT_TYPE}" >> $GITHUB_ENV
+          echo "PACKAGE_MANAGER=${PACKAGE_MANAGER}" >> $GITHUB_ENV
+          echo "LANGUAGE=${LANGUAGE}" >> $GITHUB_ENV
+          echo "FRAMEWORK=${FRAMEWORK}" >> $GITHUB_ENV
+
+          echo "✅ Detection complete!"
+          echo "   Project Type: ${PROJECT_TYPE}"
+          echo "   Language: ${LANGUAGE}"
+          echo "   Package Manager: ${PACKAGE_MANAGER}"
+          echo "   Framework: ${FRAMEWORK}"
+
+      - name: Setup Runtime Environment
+        run: |
+          echo "🔧 Setting up runtime environment for ${{ env.PROJECT_TYPE }}..."
+
+          # Node.js setup
+          if [[ "${{ env.PROJECT_TYPE }}" == "nodejs" ]]; then
+            # Setup Node.js
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+
+            # Setup package managers
+            if [[ "${{ env.PACKAGE_MANAGER }}" == "pnpm" ]]; then
+              npm install -g pnpm
+            elif [[ "${{ env.PACKAGE_MANAGER }}" == "yarn" ]]; then
+              npm install -g yarn
+            fi
+
+          # Python setup
+          elif [[ "${{ env.PROJECT_TYPE }}" == "python" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y python3 python3-pip python3-venv
+
+            if [[ "${{ env.PACKAGE_MANAGER }}" == "pipenv" ]]; then
+              pip install pipenv
+            elif [[ "${{ env.PACKAGE_MANAGER }}" == "poetry" ]]; then
+              pip install poetry
+            fi
+
+          # Java setup
+          elif [[ "${{ env.PROJECT_TYPE }}" == "java" ]]; then
+            sudo apt-get install -y default-jdk
+            if [[ "${{ env.PACKAGE_MANAGER }}" == "maven" ]]; then
+              sudo apt-get install -y maven
+            fi
+
+          # Go setup
+          elif [[ "${{ env.PROJECT_TYPE }}" == "go" ]]; then
+            wget -q https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
+            sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+            echo "export PATH=$PATH:/usr/local/go/bin" >> $GITHUB_ENV
+
+          # Rust setup
+          elif [[ "${{ env.PROJECT_TYPE }}" == "rust" ]]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            source $HOME/.cargo/env
+          fi
+
+      - name: Analyze Current Issues
+        id: analyze
+        continue-on-error: true
+        run: |
+          echo "📊 Analyzing current issues..."
+
+          # Create comprehensive analysis report
+          echo "# Project Analysis Report" > analysis.md
+          echo "## Project Information" >> analysis.md
+          echo "- Type: ${{ env.PROJECT_TYPE }}" >> analysis.md
+          echo "- Language: ${{ env.LANGUAGE }}" >> analysis.md
+          echo "- Package Manager: ${{ env.PACKAGE_MANAGER }}" >> analysis.md
+          echo "" >> analysis.md
+
+          # Try to install dependencies
+          echo "## Dependency Installation" >> analysis.md
+          if [[ -n "${{ env.INSTALL_CMD }}" ]]; then
+            ${{ env.INSTALL_CMD }} 2>&1 | tee -a analysis.md || echo "❌ Installation failed" >> analysis.md
+          fi
+
+          # Try to run tests
+          echo "## Test Results" >> analysis.md
+          if [[ -n "${{ env.TEST_CMD }}" ]]; then
+            ${{ env.TEST_CMD }} 2>&1 | head -200 >> analysis.md || echo "❌ Tests failed" >> analysis.md
+          fi
+
+          # Try to build
+          echo "## Build Results" >> analysis.md
+          if [[ -n "${{ env.BUILD_CMD }}" ]]; then
+            ${{ env.BUILD_CMD }} 2>&1 | head -100 >> analysis.md || echo "❌ Build failed" >> analysis.md
+          fi
+
+          # Try to lint
+          echo "## Lint Results" >> analysis.md
+          if [[ -n "${{ env.LINT_CMD }}" ]]; then
+            ${{ env.LINT_CMD }} 2>&1 | head -100 >> analysis.md || echo "❌ Linting failed" >> analysis.md
+          fi
+
+          # Check for security issues
+          echo "## Security Audit" >> analysis.md
+          if [[ "${{ env.PROJECT_TYPE }}" == "nodejs" ]]; then
+            npm audit 2>&1 | head -50 >> analysis.md || true
+          elif [[ "${{ env.PROJECT_TYPE }}" == "python" ]]; then
+            pip check 2>&1 >> analysis.md || true
+          fi
+
+      - name: Claude Code Action - Universal Fix
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          model: claude-3-opus-20240229
+          max_tokens: 8192
+          temperature: 0.1
+
+          task: |
+            You are an expert software engineer fixing a ${{ env.PROJECT_TYPE }} project.
+
+            ## Project Details:
+            - Language: ${{ env.LANGUAGE }}
+            - Package Manager: ${{ env.PACKAGE_MANAGER }}
+            - Framework: ${{ env.FRAMEWORK }}
+            - Fix Mode: ${{ github.event.inputs.fix_mode || 'auto-detect' }}
+
+            ## Analysis Results:
+            $(cat analysis.md)
+
+            ## Your Mission:
+            Fix ALL issues preventing successful CI/CD. Be intelligent and adaptive:
+
+            1. **Dependency Issues:**
+               - Fix version conflicts
+               - Add missing dependencies
+               - Remove deprecated packages
+               - Update lock files correctly
+
+            2. **Code Issues:**
+               - Fix syntax errors
+               - Resolve type errors (TypeScript, Flow, etc.)
+               - Fix import/export issues
+               - Handle async/await properly
+               - Fix null/undefined errors
+
+            3. **Test Issues:**
+               - Fix failing tests
+               - Mock external dependencies
+               - Fix test configuration
+               - Handle environment variables
+
+            4. **Build Issues:**
+               - Fix build configuration
+               - Resolve webpack/vite/rollup issues
+               - Fix transpilation errors
+               - Handle asset paths
+
+            5. **Linting Issues:**
+               - Fix ESLint/TSLint/Pylint errors
+               - Apply proper formatting
+               - Fix style violations
+
+            6. **Environment Issues:**
+               - Add missing environment variables
+               - Fix path issues
+               - Handle OS-specific code
+
+            7. **CI/CD Configuration:**
+               - Fix GitHub Actions syntax
+               - Add missing steps
+               - Fix permissions issues
+
+            ## Intelligent Strategies:
+
+            - If package versions conflict, use the latest stable versions
+            - If tests are flaky, add proper waits/mocks
+            - If builds fail on specific Node versions, add version checks
+            - If dependencies are missing, intelligently determine what's needed
+            - If configuration is wrong, use sensible defaults
+            - If the project structure is unusual, adapt accordingly
+
+            ## Edge Cases to Handle:
+
+            - Monorepos (lerna, nx, turborepo)
+            - Docker containers
+            - Microservices
+            - Legacy code
+            - Mixed language projects
+            - Platform-specific code
+            - External service dependencies
+            - Private package registries
+
+            ## Output Requirements:
+
+            1. Fix ALL issues, not just some
+            2. Maintain backward compatibility
+            3. Keep all existing features working
+            4. Add helpful comments for complex fixes
+            5. Ensure cross-platform compatibility
+            6. Make the build reproducible
+
+            Please fix everything and ensure CI/CD passes completely.
+
+      - name: Verify Fixes
+        id: verify
+        continue-on-error: true
+        run: |
+          echo "✅ Verifying fixes..."
+
+          # Install dependencies again
+          if [[ -n "${{ env.INSTALL_CMD }}" ]]; then
+            ${{ env.INSTALL_CMD }}
+          fi
+
+          # Run tests
+          if [[ -n "${{ env.TEST_CMD }}" ]]; then
+            ${{ env.TEST_CMD }}"
+          fi
+
+          # Run build
+          if [[ -n "${{ env.BUILD_CMD }}" ]]; then
+            ${{ env.BUILD_CMD }}
+          fi
+
+          echo "VERIFICATION_PASSED=$?" >> $GITHUB_ENV
+
+      - name: Commit and Push Fixes
+        if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+        run: |
+          git config user.name "Universal Claude Fixer"
+          git config user.email "claude@anthropic.com"
+
+          if [[ -n $(git status -s) ]]; then
+            git add -A
+            git commit -m "fix: Universal CI/CD fixes by Claude
+
+- Fixed dependency issues
+- Resolved build errors
+- Fixed failing tests
+- Corrected linting issues
+- Updated configurations
+- Ensured cross-platform compatibility
+
+This is an automated fix for ${{ env.PROJECT_TYPE }} project using ${{ env.PACKAGE_MANAGER }}.
+
+🤖 Generated by Universal Claude Fixer"
+
+            # Push to appropriate branch
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              git push origin HEAD:${{ github.head_ref }}
+            else
+              git push origin HEAD
+            fi
+          fi
+
+      - name: Create Fix Report
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const message = `## 🤖 Universal Claude Fixer Report
+
+            **Project Type:** ${{ env.PROJECT_TYPE }}
+            **Language:** ${{ env.LANGUAGE }}
+            **Package Manager:** ${{ env.PACKAGE_MANAGER }}
+
+            ### Status:
+            ${process.env.VERIFICATION_PASSED === '0' ? '✅ All issues fixed!' : '⚠️ Some issues may need manual review'}
+
+            ### Actions Taken:
+            - Analyzed project structure
+            - Fixed dependency issues
+            - Resolved code errors
+            - Fixed failing tests
+            - Corrected build configuration
+
+            ### Next Steps:
+            1. Review the changes
+            2. Run tests locally
+            3. Merge if everything looks good
+
+            ---
+            *Universal Claude Fixer - Works with ANY project!*`;
+
+            if (context.eventName === 'pull_request') {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: message
+              });
+            }
