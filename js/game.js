@@ -14,9 +14,28 @@
     bestStars:0
   });
   let roundTimer=0, roundActive=false, prompt=null, correctTag=null, orbs=[];
+  let flow=1, flowTimer=0, lastCorrectAt=0;
 
   const COLORS = ["red","teal","lime","purple"];
   const COLOR_IDX = { red:0, teal:1, lime:2, purple:3 };
+
+  // Flow meter (momentum rewards)
+  function bumpFlow(){
+    const now = performance.now();
+    const recent = (now - lastCorrectAt) < 2200;
+    flow = clamp(flow + (recent ? 0.35 : 0.2), 1, 3.5);
+    flowTimer = 6.5;
+    lastCorrectAt = now;
+    HUD.setFlow(flow);
+  }
+  function decayFlow(dt){
+    if(flow <= 1) return;
+    flowTimer -= dt;
+    if(flowTimer <= 0){
+      flow = clamp(flow - dt*0.8, 1, 3.5);
+      HUD.setFlow(flow);
+    }
+  }
 
   // Prompt generator
   function genPrompt(){
@@ -70,6 +89,7 @@
       this.correct = !!opts?.correct;
       this.style = opts?.style || {};
       this.spriteIndex = this.style.color ? COLOR_IDX[this.style.color]||0 : 0;
+      this.bonus = !!opts?.bonus;
       this.bump = 1; this.alpha=1; this.wobble = rand(0, Math.PI*2);
     }
     step(dt){
@@ -87,6 +107,18 @@
       ctx.globalAlpha = this.alpha;
       ctx.translate(this.x, this.y);
       ctx.scale(this.bump, this.bump);
+      if(this.bonus){
+        const g = ctx.createRadialGradient(0,0,r*0.2, 0,0,r*1.2);
+        g.addColorStop(0, "rgba(255, 255, 255, .95)");
+        g.addColorStop(0.5, "rgba(255, 209, 120, .8)");
+        g.addColorStop(1, "rgba(255, 166, 255, 0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0,0,r*1.15,0,Math.PI*2);
+        ctx.fill();
+        ctx.shadowBlur = 22;
+        ctx.shadowColor = "rgba(255, 218, 107, .7)";
+      }
       ctx.drawImage(sprOrbs, sx, 0, 256, 256, -r, -r, r*2, r*2);
 
       if(this.correct){
@@ -120,6 +152,9 @@
     HUD.setPrompt(prompt.text);
     roundActive = true;
     roundTimer = State.roundTime;
+    flowTimer = Math.max(flowTimer, 2);
+    HUD.setFlow(flow);
+    const addBonus = Math.random() < 0.3;
     const slots = Math.max(6, 4 + State.level);
     const indices = Array.from({length:slots}, (_,i)=>i);
     const correctSlots = [];
@@ -156,13 +191,25 @@
       const orb = new Orb(undefined, undefined, { label, tag, correct: (tag===prompt.tag), style });
       orbs.push(orb);
     }
+    if(addBonus){
+      const bonus = new Orb(undefined, undefined, { label:"✦", tag:"bonus", style:{color:"lime"}, bonus:true });
+      bonus.r += 8;
+      bonus.vx *= 1.1; bonus.vy *= 1.1;
+      orbs.push(bonus);
+    }
+  }
+
+  function startRound(){
+    resetMetrics();
+    spawnLevel();
+    overlayMode = "pause";
   }
 
   // Metrics for rating
   let taps=0, corr=0, wrong=0;
   function resetMetrics(){ taps=0; corr=0; wrong=0; }
 
-  function endLevel(win){
+  function endLevel(win, opts={}){
     roundActive = false; orbs.length = 0;
     let stars=0, acc=0, timePct=0;
     if(win){
@@ -170,23 +217,40 @@
       timePct = clamp(roundTimer / State.roundTime, 0, 1);
       stars = 1; if(acc>=0.75) stars=2; if(acc>=0.9 && timePct>=0.3) stars=3;
       State.bestStars = Math.max(State.bestStars, stars);
-      State.score += 10 + 4*stars + 2*State.streak;
+      const bonusScore = 10 + 4*stars + 2*State.streak;
+      State.score += Math.round(bonusScore * flow);
       State.streak++;
       fanfare();
+      bumpFlow();
     } else {
-      State.lives--; State.streak=0; beepBad();
+      if(!opts.alreadyLostLife){ State.lives--; }
+      State.streak=0; flow = 1; HUD.setFlow(flow); beepBad();
     }
     HUD.setScore(State.score); HUD.setStreak(State.streak); HUD.setLevel(State.level); HUD.setLives(State.lives);
+    State.level += win ? 1 : 0;
+    HUD.setLevel(State.level);
     Save.set("STATE", State);
 
     // Show simple end overlay using pause overlay title
     const ov = document.getElementById("pauseOverlay");
     const title = document.getElementById("pauseTitle");
+    const resumeLabel = document.getElementById("btnResume");
     ov.classList.add("show");
-    if(!win && State.lives<=0){ title.textContent = "Game Over 💥"; }
-    else if(win){ title.textContent = `Level ${State.level} Complete!  ${"★".repeat(stars)}${"☆".repeat(3-stars)}`; }
-    else { title.textContent = "Missed it — try again!"; }
-    State.level += win ? 1 : 0;
+    let nextText = "Resume ▶";
+    if(!win && State.lives<=0){
+      title.textContent = "Game Over 💥";
+      nextText = "Restart ▶";
+    }
+    else if(win){
+      title.textContent = `Level ${State.level-1} Complete!  ${"★".repeat(stars)}${"☆".repeat(3-stars)}`;
+      nextText = "Next Level ▶";
+    }
+    else {
+      title.textContent = "Missed it — try again!";
+      nextText = "Retry ▶";
+    }
+    resumeLabel.textContent = nextText;
+    overlayMode = "result";
   }
 
   // Input
@@ -197,13 +261,24 @@
       const s = orbs[i];
       const d = Math.hypot(s.x-x, s.y-y);
       if(d < s.r){
+        if(s.bonus){
+          State.score += Math.round(12 * flow);
+          roundTimer = clamp(roundTimer + 4, 8, State.roundTime + 8);
+          s.pop(); orbs.splice(i,1);
+          beepGood();
+          HUD.setScore(State.score);
+          continue;
+        }
         taps++;
         if(s.correct){
           corr++; hitCorrect++;
           s.pop(); orbs.splice(i,1);
-          State.score += 3; beepGood();
+          bumpFlow();
+          State.score += Math.round(3 * flow);
+          beepGood();
         } else {
           wrong++; hitWrong++;
+          flow = 1; HUD.setFlow(flow);
           State.score = Math.max(0, State.score-1); beepBad();
         }
       }
@@ -214,15 +289,16 @@
     if(hitWrong>0 && hitCorrect===0){
       State.lives = Math.max(0, State.lives-1);
       HUD.setLives(State.lives);
-      if(State.lives<=0) endLevel(false);
+      if(State.lives<=0) endLevel(false, { alreadyLostLife:true });
     }
   }
 
   // Scenes
   class PlayScene {
-    enter(){ resetMetrics(); spawnLevel(); }
+    enter(){ startRound(); }
     update(dt){
       if(!roundActive) return;
+      decayFlow(dt);
       for(const s of orbs) s.step(dt);
       orbs = orbs.filter(s=>s.life>0);
       roundTimer -= dt;
@@ -235,8 +311,14 @@
       const [W,H] = size;
       const pct = clamp(roundTimer/State.roundTime,0,1);
       const cx=W-42, cy=42, r=26;
-      ctx.beginPath(); ctx.strokeStyle="rgba(255,255,255,.35)"; ctx.lineWidth=6; ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
-      ctx.beginPath(); ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=6; ctx.arc(cx,cy,r,-Math.PI/2, -Math.PI/2 + Math.PI*2*pct); ctx.stroke();
+      ctx.save();
+      ctx.shadowBlur = 12; ctx.shadowColor = "rgba(255, 214, 102, .6)";
+      ctx.beginPath(); ctx.strokeStyle="rgba(255,255,255,.28)"; ctx.lineWidth=6; ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+      const ring = ctx.createLinearGradient(cx-r, cy-r, cx+r, cy+r);
+      ring.addColorStop(0,"rgba(255,214,102,.9)");
+      ring.addColorStop(1,"rgba(163,210,255,.9)");
+      ctx.beginPath(); ctx.strokeStyle=ring; ctx.lineWidth=6; ctx.arc(cx,cy,r,-Math.PI/2, -Math.PI/2 + Math.PI*2*pct); ctx.stroke();
+      ctx.restore();
     }
     pointer(x,y){ onTap(x,y); }
     touch(ts){ for(const t of ts){ onTap(t.clientX, t.clientY); } }
@@ -251,15 +333,26 @@
   const btnApply = document.getElementById("btnApply");
   const pauseOverlay = document.getElementById("pauseOverlay");
   const settingsOverlay = document.getElementById("settingsOverlay");
+  let overlayMode = "pause";
 
-  function showPause(title="Paused"){ document.getElementById("pauseTitle").textContent=title; pauseOverlay.classList.add("show"); }
+  function showPause(title="Paused", mode="pause"){ overlayMode = mode; document.getElementById("pauseTitle").textContent=title; pauseOverlay.classList.add("show"); if(mode==="pause") btnResume.textContent="Resume ▶"; }
   function hidePause(){ pauseOverlay.classList.remove("show"); }
 
-  btnPause.addEventListener("click", ()=> showPause("Paused"));
-  btnResume.addEventListener("click", ()=> { hidePause(); });
+  btnPause.addEventListener("click", ()=> showPause("Paused", "pause"));
+  btnResume.addEventListener("click", ()=> {
+    hidePause();
+    if(overlayMode === "result"){
+      if(State.lives<=0){
+        btnRestart.click();
+      } else {
+        startRound();
+      }
+    }
+  });
   btnRestart.addEventListener("click", ()=>{
     State.score=0; State.streak=0; State.level=1; State.lives=3;
     Save.set("STATE", State);
+    flow=1; flowTimer=0; HUD.setFlow(flow);
     hidePause(); Scenes.set(play); // fresh level
   });
   btnSettings.addEventListener("click", ()=>{
@@ -306,7 +399,7 @@
 
   // Boot
   HUD.setScore(State.score); HUD.setStreak(State.streak);
-  HUD.setLevel(State.level); HUD.setLives(State.lives);
+  HUD.setLevel(State.level); HUD.setLives(State.lives); HUD.setFlow(flow);
   Scenes.set(play);
   requestAnimationFrame(loop);
 })();
