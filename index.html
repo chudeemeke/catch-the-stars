@@ -8,33 +8,43 @@
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title>Catch the Stars — v1.1.1</title>
 <style>
-  :root{ --accent:#ffd166; --ink:#fff; }
-  html,body{margin:0;height:100%;overflow:hidden;background:#0f1226;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif}
-  canvas{display:block;touch-action:none}
-  .hud{position:fixed;left:0;right:0;top:0;display:flex;gap:.6rem;align-items:center;padding:.6rem .8rem;background:linear-gradient(to bottom,rgba(0,0,0,.35),rgba(0,0,0,0));z-index:3}
-  .chip{background:rgba(255,255,255,.12);padding:.35rem .6rem;border-radius:.7rem;font-weight:700;font-size:14px}
-  .title{font-weight:800;font-size:16px;margin-right:auto}
-  .btn{cursor:pointer;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:.45rem .7rem;border-radius:.6rem;font-weight:700}
-  .prompt{position:fixed;left:50%;transform:translateX(-50%);top:48px;padding:.5rem 1rem;border-radius:.8rem;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);font-weight:800;z-index:3}
-  .overlay{position:fixed;inset:0;display:none;place-items:center;background:rgba(3,6,23,.55);backdrop-filter:blur(8px);z-index:4}
+  :root{
+    --accent:#ffda6b;
+    --ink:#fff;
+    --panel:#16192f;
+    --frost:rgba(255,255,255,.08);
+    --glass:rgba(10,12,25,.68);
+  }
+  html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(circle at 20% 20%,rgba(255,214,102,.12),transparent 35%),radial-gradient(circle at 80% 30%,rgba(141,100,255,.18),transparent 40%),#0c0f25;color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif}
+  canvas{display:block;touch-action:none;filter:drop-shadow(0 0 20px rgba(255,255,255,.08));}
+  .hud{position:fixed;left:0;right:0;top:0;display:flex;gap:.6rem;align-items:center;padding:.7rem 1rem;background:linear-gradient(to bottom,rgba(10,12,25,.72),rgba(10,12,25,.22));backdrop-filter:blur(8px);z-index:3;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .chip{background:rgba(255,255,255,.1);padding:.38rem .7rem;border-radius:.9rem;font-weight:800;font-size:14px;letter-spacing:.02em;box-shadow:0 6px 16px rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.15)}
+  .title{font-weight:900;font-size:17px;margin-right:auto;text-shadow:0 3px 18px rgba(255,218,107,.35);display:flex;align-items:center;gap:.45rem}
+  .title .badge{padding:.22rem .55rem;border-radius:.7rem;background:rgba(255,255,255,.1);font-size:11px;font-weight:800;letter-spacing:.04em}
+  .btn{cursor:pointer;background:linear-gradient(120deg,rgba(255,218,107,.65),rgba(255,255,255,.35));color:#1b1230;border:1px solid rgba(255,255,255,.3);padding:.46rem .75rem;border-radius:.7rem;font-weight:900;box-shadow:0 10px 30px rgba(0,0,0,.22);transition:transform 120ms ease, box-shadow 120ms ease}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 16px 40px rgba(0,0,0,.35)}
+  .prompt{position:fixed;left:50%;transform:translateX(-50%);top:58px;padding:.55rem 1.1rem;border-radius:1rem;background:var(--glass);backdrop-filter:blur(14px);font-weight:900;z-index:3;border:1px solid rgba(255,255,255,.15);box-shadow:0 16px 40px rgba(0,0,0,.35)}
+  .prompt small{display:block;font-weight:700;opacity:.75;letter-spacing:.05em;font-size:11px;margin-bottom:2px}
+  .overlay{position:fixed;inset:0;display:none;place-items:center;background:radial-gradient(circle at 20% 20%,rgba(255,218,107,.12),transparent 38%),rgba(3,6,23,.65);backdrop-filter:blur(10px);z-index:4}
   .overlay.show{display:grid}
-  .panel{width:min(680px,92vw);max-height:86vh;overflow:auto;background:rgba(20,22,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  .row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.4rem 0}
-  .toggle{display:flex;align-items:center;gap:.5rem;padding:.5rem .7rem;background:rgba(255,255,255,.08);border-radius:10px;cursor:pointer}
-  .panel .btn{background:var(--accent);color:#1a1725;border:none;font-weight:900;padding:.7rem 1rem;border-radius:10px;margin-top:8px}
+  .panel{width:min(720px,92vw);max-height:86vh;overflow:auto;background:var(--panel);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:22px;box-shadow:0 26px 80px rgba(0,0,0,.55);line-height:1.6}
+  .row{display:flex;flex-wrap:wrap;gap:.6rem;margin:.55rem 0}
+  .toggle{display:flex;align-items:center;gap:.55rem;padding:.6rem .8rem;background:var(--frost);border-radius:12px;cursor:pointer;border:1px solid rgba(255,255,255,.12);font-weight:700}
+  .panel .btn{background:linear-gradient(120deg,#ffd166,#fcb1ff);color:#1a1725;border:none;font-weight:900;padding:.78rem 1.1rem;border-radius:12px;margin-top:12px;box-shadow:0 14px 38px rgba(0,0,0,.35)}
 </style>
 </head>
 <body>
   <div class="hud">
-    <div class="title">🌟 Catch the Stars</div>
+    <div class="title">🌟 Catch the Stars <span class="badge">v1.1.1</span></div>
     <div class="chip" id="scoreChip">Score: 0</div>
     <div class="chip" id="streakChip">Streak: 0</div>
+    <div class="chip" id="flowChip">Flow x1.0</div>
     <div class="chip" id="levelChip">Level: 1</div>
     <div class="chip" id="livesChip">❤️❤️❤️</div>
     <div class="btn" id="btnPause">⏸</div>
     <div class="btn" id="btnSettings">⚙️</div>
   </div>
-  <div class="prompt" id="prompt">Tap the right star!</div>
+  <div class="prompt" id="prompt"><small>Mission</small>Tap the right star!</div>
   <canvas id="game"></canvas>
 
   <div class="overlay" id="pauseOverlay" role="dialog" aria-modal="true">
@@ -48,7 +58,7 @@
         <div class="toggle"><input type="checkbox" id="soundOn" checked>SFX</div>
         <div class="toggle"><input type="checkbox" id="musicOn">Music</div>
       </div>
-      <p>Goal: pop the star(s) that match the prompt. Earn up to ★★★ per level.</p>
+      <p>Goal: pop the star(s) that match the prompt. Keep your Flow high for bonus points and grab ✦ bonus orbs for extra time.</p>
     </div>
   </div>
 

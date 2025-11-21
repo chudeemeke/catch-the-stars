@@ -111,6 +111,7 @@
   const bgNebula = new Image(); bgNebula.src = "assets/bg-nebula.png";
   function drawParallax(ts){
     ctx.drawImage(bgSky, 0, 0, W, H);
+    ctx.save();
     ctx.globalAlpha = 0.45;
     const cx = -((ts*0.08)%W);
     ctx.drawImage(bgClouds, cx, 0, W, H);
@@ -118,7 +119,14 @@
     ctx.globalAlpha = 0.38;
     const nx = (Math.sin(ts*0.12)*0.5+0.5)*-100;
     ctx.drawImage(bgNebula, nx, 0, W+200, H);
-    ctx.globalAlpha = 1;
+    const aurora = ctx.createLinearGradient(0, 0, W, H*0.45);
+    aurora.addColorStop(0, "rgba(97, 180, 255, .14)");
+    aurora.addColorStop(0.5, "rgba(255, 214, 102, .12)");
+    aurora.addColorStop(1, "rgba(255, 172, 255, .08)");
+    ctx.globalCompositeOperation = "screen";
+    ctx.fillStyle = aurora;
+    ctx.fillRect(0, 0, W, H*0.7);
+    ctx.restore();
   }
 
   // Sprites
@@ -146,12 +154,13 @@
   // HUD
   const HUD = {
     scoreEl: $("#scoreChip"), streakEl: $("#streakChip"), levelEl: $("#levelChip"),
-    livesEl: $("#livesChip"), promptEl: $("#prompt"),
+    livesEl: $("#livesChip"), promptEl: $("#prompt"), flowEl: $("#flowChip"),
     setScore(v){ this.scoreEl.textContent=`Score: ${v}`; },
     setStreak(v){ this.streakEl.textContent=`Streak: ${v}`; },
     setLevel(v){ this.levelEl.textContent=`Level: ${v}`; },
     setLives(n){ this.livesEl.textContent="❤️".repeat(n); },
-    setPrompt(t){ this.promptEl.textContent=t; }
+    setFlow(mult){ this.flowEl.textContent=`Flow x${mult.toFixed(1)}`; },
+    setPrompt(t){ this.promptEl.innerHTML = `<small>Mission</small>${t}`; }
   };
 
   // Input wiring
